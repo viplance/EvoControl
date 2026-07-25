@@ -243,7 +243,9 @@ private struct VerticalFader: View {
             Text(percent(value))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
-                .frame(width: 42)
+                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 42, height: 14)
 
             GeometryReader { proxy in
                 let clamped = max(0, min(1, value))
@@ -300,10 +302,15 @@ private struct VerticalLevelMeter: View {
 
     var body: some View {
         VStack(spacing: 8) {
+            // Fixed single line: the dB string changes width as the level
+            // moves ("-inf" ... "-100 dB"), and any wrap or reflow would
+            // change this row's height and shift every control below it.
             Text(isAvailable ? dbText(value) : "N/A")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(levelColor(value))
-                .frame(width: 44)
+                .lineLimit(1)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 56, height: 14)
 
             GeometryReader { proxy in
                 let visualLevel: Double = {
@@ -365,13 +372,13 @@ private func percent(_ value: Double) -> String {
     "\(Int((value * 100).rounded()))%"
 }
 
+/// Fixed-width dB readout. Padded so the string length never changes as the
+/// level moves, which keeps the monospaced label from reflowing.
 private func dbText(_ value: Double) -> String {
     let clamped = max(0.000001, min(1, value))
     let db = 20 * log10(clamped)
-    if db <= -120 {
-        return "-inf"
-    }
-    return "\(Int(db.rounded())) dB"
+    let text = db <= -120 ? "-inf" : "\(Int(db.rounded()))"
+    return String(repeating: " ", count: max(0, 4 - text.count)) + text + " dB"
 }
 
 private func levelColor(_ value: Double) -> Color {
