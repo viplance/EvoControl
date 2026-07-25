@@ -57,13 +57,37 @@ enum EvoUsbProtocol {
         )
     }
 
+    /// Sets how much of a hardware input is folded into an output bus.
+    ///
+    /// wValue = 0x0100 + input*4 + output (mic1 = 0x100..0x103, mic2 = 0x104..).
+    /// The payload is a 2-byte little-endian Q8.8 signed dB value, not the
+    /// 4-byte table this previously sent -- the device ignored those writes,
+    /// which is why direct monitoring stayed silent.
     static func setDirectMonitor(input: Int, output: Int, percent: Double) -> ControlResult {
-        let step = Int((clamped(percent) * 180).rounded())
-        return send(
+        send(
             wValue: 0x0100 + UInt16(max(0, input - 1) * 4 + max(0, output - 1)),
             wIndex: 0x3C00,
-            data: monitorBytes(step: step)
+            data: monitorGainBytes(percent: percent)
         )
+    }
+
+    /// Maps 0...1 onto the device's dB range as little-endian Q8.8.
+    /// 0 mutes (-128 dB); 1.0 is unity (0 dB).
+    static func monitorGainBytes(percent: Double) -> [UInt8] {
+        let value = clamped(percent)
+        let db: Int
+        if value <= 0.0001 {
+            db = -128
+        } else {
+            // -60 dB at the bottom of the usable range up to 0 dB at the top.
+            db = Int((-60.0 + value * 60.0).rounded())
+        }
+        let raw = UInt16(bitPattern: Int16(clampedDb(db) * 256))
+        return [UInt8(raw & 0xFF), UInt8((raw >> 8) & 0xFF)]
+    }
+
+    private static func clampedDb(_ db: Int) -> Int16 {
+        Int16(max(-128, min(0, db)))
     }
 
     private static func send(wValue: UInt16, wIndex: UInt16, data: [UInt8]) -> ControlResult {
@@ -157,11 +181,6 @@ enum EvoUsbProtocol {
         return steps[max(0, min(steps.count - 1, rawStep))]
     }
 
-    private static func monitorBytes(step rawStep: Int) -> [UInt8] {
-        let steps = generateMonitorBytes()
-        return steps[max(0, min(steps.count - 1, rawStep))]
-    }
-
     private static func generateOutputBytes() -> [[UInt8]] {
         var steps: [[UInt8]] = []
         func add(_ b0: UInt8, _ b1: UInt8) {
@@ -183,24 +202,4 @@ enum EvoUsbProtocol {
         return steps
     }
 
-    private static func generateMonitorBytes() -> [[UInt8]] {
-        var steps: [[UInt8]] = []
-        func add(_ b0: UInt8, _ b1: UInt8) {
-            steps.append([b0, b1, 0xFF, 0xFF])
-        }
-
-        stride(from: 0x80, to: 0xD0, by: 0x06).forEach { add(0x00, UInt8($0)) }
-        for b1 in 0xD0..<0xE4 {
-            add(0x00, UInt8(b1))
-            add(0x80, UInt8(b1))
-        }
-        for b1 in 0xE4..<0xF3 {
-            [0x00, 0x40, 0x80, 0xC0].forEach { add(UInt8($0), UInt8(b1)) }
-        }
-        for b1 in 0xF3..<0x100 {
-            [0x00, 0x34, 0x67, 0x9A, 0xCD].forEach { add(UInt8($0), UInt8(b1)) }
-        }
-        steps.append([0x00, 0x00, 0xFF, 0xFF])
-        return steps
-    }
 }

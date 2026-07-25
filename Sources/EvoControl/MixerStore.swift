@@ -8,8 +8,8 @@ final class MixerStore: ObservableObject {
     @Published var devices: [EvoDevice] = []
     @Published var selectedDevice: EvoDevice?
     @Published var inputs: [InputChannel] = [
-        InputChannel(id: 1, name: "Input 1", gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 0.35, level: 0),
-        InputChannel(id: 2, name: "Input 2", gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 0.30, level: 0)
+        InputChannel(id: 1, name: "Input 1", gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 0.8, level: 0),
+        InputChannel(id: 2, name: "Input 2", gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 0.8, level: 0)
     ]
     @Published var outputs: [OutputChannel] = [
         OutputChannel(id: 1, name: "Output", volume: 0.72, muted: false, level: 0, hasLevelMeter: false),
@@ -79,6 +79,7 @@ final class MixerStore: ObservableObject {
 
         log("Selected device: \(selectedDevice.displayName) (ID: \(selectedDevice.id)). Microphone auth: \(microphoneAuthorizationDescription)")
         requestHardwareControlSync()
+        pushDirectMixToHardware()
         startHardwarePolling()
         let meterResult: ControlResult
         if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
@@ -153,6 +154,25 @@ final class MixerStore: ObservableObject {
             let left = hardware.setDirectMonitorMix(device: device, input: inputID, output: 1, value: value)
             let right = hardware.setDirectMonitorMix(device: device, input: inputID, output: 2, value: value)
             await self.applyControlOutcome(usbResult: left.applied ? right : left, fallback: nil)
+        }
+    }
+
+    /// Pushes the current monitor-mix sliders to the device.
+    ///
+    /// The device cannot report its mix back, so on connect the UI's values are
+    /// the source of truth. Without this the sliders show a level the hardware
+    /// was never told about, and direct monitoring stays silent until the user
+    /// happens to drag one.
+    private func pushDirectMixToHardware() {
+        let hardware = self.hardware
+        let device = selectedDevice
+        let mixes = inputs.map { ($0.id, $0.directMixToOutput) }
+        Task.detached {
+            for (inputID, value) in mixes {
+                _ = hardware.setDirectMonitorMix(device: device, input: inputID, output: 1, value: value)
+                _ = hardware.setDirectMonitorMix(device: device, input: inputID, output: 2, value: value)
+            }
+            DebugLog.write("MixerStore", "pushed initial direct monitor mix: \(mixes)")
         }
     }
 
