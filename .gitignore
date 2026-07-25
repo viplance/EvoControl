@@ -1,0 +1,20 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# macOS
+.DS_Store
+
+# Build output / logs
+*.o
+*.dSYM/
+evo-control-debug.log

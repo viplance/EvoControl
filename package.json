@@ -1,0 +1,14 @@
+{
+  "name": "evo-control",
+  "version": "0.1.0",
+  "description": "Evo Control: macOS Apple Silicon Swift mixer control app for Audient EVO interfaces.",
+  "scripts": {
+    "build": "swift build -c release",
+    "dev": "bash scripts/run_app.sh",
+    "start": "bash scripts/run_app.sh",
+    "clean": "swift package clean && rm -rf .build",
+    "test": "swift test"
+  },
+  "author": "Dzmitry Sharko",
+  "license": "GPL-3.0-or-later"
+}
