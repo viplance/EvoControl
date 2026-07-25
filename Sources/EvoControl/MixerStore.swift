@@ -8,12 +8,17 @@ final class MixerStore: ObservableObject {
     @Published var devices: [EvoDevice] = []
     @Published var selectedDevice: EvoDevice?
     @Published var inputs: [InputChannel] = [
-        InputChannel(id: 1, name: "Input 1", gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 0.8, level: 0),
-        InputChannel(id: 2, name: "Input 2", gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 0.8, level: 0)
+        InputChannel(id: 1, name: "Input 1", gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 1.0, level: 0),
+        InputChannel(id: 2, name: "Input 2", gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 1.0, level: 0)
     ]
+    // The EVO 4 has a single output level shared by the speaker outputs and the
+    // headphone jack -- the manual states the Volume control applies to both,
+    // and reading wIndex 0x3B00 confirms it: 0x0000 and 0x0001 are the left and
+    // right of one pair and always hold the same value, while 0x0002..0x0008
+    // sit permanently at -127.5 dB (not implemented). A separate "Monitor"
+    // strip therefore duplicated the same hardware control.
     @Published var outputs: [OutputChannel] = [
-        OutputChannel(id: 1, name: "Output", volume: 0.72, muted: false, level: 0, hasLevelMeter: false),
-        OutputChannel(id: 2, name: "Monitor", volume: 0.54, muted: false, level: 0, hasLevelMeter: false)
+        OutputChannel(id: 1, name: "Output", volume: 0.72, muted: false, level: 0, hasLevelMeter: false)
     ]
     @Published var statusMessage = "Searching for Audient EVO..."
 

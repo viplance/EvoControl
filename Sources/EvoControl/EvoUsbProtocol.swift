@@ -48,13 +48,17 @@ enum EvoUsbProtocol {
         )
     }
 
+    /// Sets the shared output level (speakers + headphones).
+    ///
+    /// wIndex 0x3B00 holds one stereo pair: 0x0000 is left, 0x0001 is right,
+    /// and both must be written together. Reading the block back shows Q8.8 dB
+    /// values here as well, not the 4-byte step table this used to send.
+    /// 0x0002..0x0008 read as -127.5 dB permanently and are not implemented.
     static func setOutputVolume(output: Int, percent: Double) -> ControlResult {
-        let step = Int((clamped(percent) * 160).rounded())
-        return send(
-            wValue: 0x0000 + UInt16(max(0, output - 1)),
-            wIndex: 0x3B00,
-            data: outputBytes(step: step)
-        )
+        let payload = volumeDbBytes(percent: percent, minDb: -60.0)
+        let left = send(wValue: 0x0000, wIndex: 0x3B00, data: payload)
+        guard left.applied else { return left }
+        return send(wValue: 0x0001, wIndex: 0x3B00, data: payload)
     }
 
     /// Sets how much of a hardware input is folded into an output bus.
@@ -71,23 +75,18 @@ enum EvoUsbProtocol {
         )
     }
 
-    /// Maps 0...1 onto the device's dB range as little-endian Q8.8.
-    /// 0 mutes (-128 dB); 1.0 is unity (0 dB).
     static func monitorGainBytes(percent: Double) -> [UInt8] {
-        let value = clamped(percent)
-        let db: Int
-        if value <= 0.0001 {
-            db = -128
-        } else {
-            // -60 dB at the bottom of the usable range up to 0 dB at the top.
-            db = Int((-60.0 + value * 60.0).rounded())
-        }
-        let raw = UInt16(bitPattern: Int16(clampedDb(db) * 256))
-        return [UInt8(raw & 0xFF), UInt8((raw >> 8) & 0xFF)]
+        volumeDbBytes(percent: percent, minDb: -60.0)
     }
 
-    private static func clampedDb(_ db: Int) -> Int16 {
-        Int16(max(-128, min(0, db)))
+    /// Maps 0...1 onto the device's little-endian Q8.8 signed dB format.
+    /// 0 mutes (-128 dB); 1.0 is unity (0 dB); in between spans `minDb`...0.
+    static func volumeDbBytes(percent: Double, minDb: Double) -> [UInt8] {
+        let value = clamped(percent)
+        let db = value <= 0.0001 ? -128.0 : minDb - value * minDb
+        let clampedValue = max(-128.0, min(0.0, db))
+        let raw = UInt16(bitPattern: Int16((clampedValue * 256).rounded()))
+        return [UInt8(raw & 0xFF), UInt8((raw >> 8) & 0xFF)]
     }
 
     private static func send(wValue: UInt16, wIndex: UInt16, data: [UInt8]) -> ControlResult {
@@ -176,30 +175,5 @@ enum EvoUsbProtocol {
         return steps.firstIndex { Array($0.prefix(4)) == Array(bytes.prefix(4)) }
     }
 
-    private static func outputBytes(step rawStep: Int) -> [UInt8] {
-        let steps = generateOutputBytes()
-        return steps[max(0, min(steps.count - 1, rawStep))]
-    }
-
-    private static func generateOutputBytes() -> [[UInt8]] {
-        var steps: [[UInt8]] = []
-        func add(_ b0: UInt8, _ b1: UInt8) {
-            steps.append([b0, b1, 0xFF, 0xFF])
-        }
-
-        add(0x00, 0x80)
-        add(0x00, 0x81)
-        for b1 in 0x84...0xE0 {
-            add(0x00, UInt8(b1))
-        }
-        for b1 in 0xE0...0xFE {
-            add(0x00, UInt8(b1))
-            add(0x80, UInt8(b1))
-        }
-        add(0x00, 0xFF)
-        add(0x80, 0xFF)
-        add(0x00, 0x00)
-        return steps
-    }
 
 }
