@@ -8,8 +8,8 @@ final class MixerStore: ObservableObject {
     @Published var devices: [EvoDevice] = []
     @Published var selectedDevice: EvoDevice?
     @Published var inputs: [InputChannel] = [
-        InputChannel(id: 1, name: "Input 1", mode: .microphone, gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 0.35, level: 0),
-        InputChannel(id: 2, name: "Input 2", mode: .instrument, gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 0.30, level: 0)
+        InputChannel(id: 1, name: "Input 1", gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 0.35, level: 0),
+        InputChannel(id: 2, name: "Input 2", gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 0.30, level: 0)
     ]
     @Published var outputs: [OutputChannel] = [
         OutputChannel(id: 1, name: "Output", volume: 0.72, muted: false, level: 0, hasLevelMeter: false),

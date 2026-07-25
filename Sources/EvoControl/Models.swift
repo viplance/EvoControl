@@ -1,16 +1,8 @@
 import Foundation
 
-enum InputMode: String, CaseIterable, Identifiable {
-    case microphone = "Mic"
-    case instrument = "Inst"
-
-    var id: String { rawValue }
-}
-
 struct InputChannel: Identifiable, Equatable {
     let id: Int
     var name: String
-    var mode: InputMode
     var gain: Double
     var phantomPower: Bool
     var muted: Bool

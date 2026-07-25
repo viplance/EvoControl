@@ -101,14 +101,6 @@ private struct InputStrip: View {
                 .help(input.muted ? "Unmute" : "Mute")
             }
 
-            Picker("", selection: $input.mode) {
-                ForEach(InputMode.allCases) { mode in
-                    Text(mode.rawValue).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
             MixerChannelControls(
                 meterTitle: "Level",
                 meterValue: input.level,
