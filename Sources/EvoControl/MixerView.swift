@@ -1,5 +1,8 @@
 import SwiftUI
 
+private let channelStripHeight: CGFloat = 280
+private let bottomControlHeight: CGFloat = 58
+
 struct MixerView: View {
     @EnvironmentObject private var store: MixerStore
 
@@ -8,13 +11,13 @@ struct MixerView: View {
             TopBar()
             Divider()
             VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 10) {
+                HStack(alignment: .top, spacing: 8) {
                     ForEach($store.inputs) { $input in
                         InputStrip(input: $input)
                     }
 
                     Divider()
-                        .frame(height: 340)
+                        .frame(height: channelStripHeight)
                         .padding(.horizontal, 2)
 
                     ForEach($store.outputs) { $output in
@@ -22,8 +25,7 @@ struct MixerView: View {
                     }
                 }
             }
-            .padding(18)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
+            .padding(10)
         }
         .background(Color(nsColor: .windowBackgroundColor))
     }
@@ -36,7 +38,7 @@ private struct TopBar: View {
         HStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Evo Control")
-                    .font(.system(size: 20, weight: .semibold))
+                    .font(.system(size: 16, weight: .semibold))
                 Text(store.statusMessage)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
@@ -55,8 +57,8 @@ private struct TopBar: View {
             }
             .frame(width: 220)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
     }
 
     private var deviceBinding: Binding<EvoDevice?> {
@@ -87,58 +89,62 @@ private struct InputStrip: View {
     @Binding var input: InputChannel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text(input.name)
-                    .font(.system(size: 14, weight: .semibold))
-                Spacer()
-                Button {
-                    input.muted.toggle()
-                    store.setInputMute(inputID: input.id, muted: input.muted)
-                } label: {
-                    Image(systemName: input.muted ? "mic.slash.fill" : "mic.fill")
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(input.name)
+                        .font(.system(size: 13, weight: .semibold))
+                    Spacer()
+                    Button {
+                        input.muted.toggle()
+                        store.setInputMute(inputID: input.id, muted: input.muted)
+                    } label: {
+                        Image(systemName: input.muted ? "mic.slash.fill" : "mic.fill")
+                    }
+                    .help(input.muted ? "Unmute" : "Mute")
                 }
-                .help(input.muted ? "Unmute" : "Mute")
-            }
 
-            MixerChannelControls(
-                meterTitle: "Level",
-                meterValue: input.level,
-                faderTitle: "Gain",
-                faderValue: input.gain,
-                onFaderChange: {
-                    input.gain = $0
-                    store.setGain(inputID: input.id, value: $0)
-                }
-            )
-
-            Toggle(isOn: Binding(
-                get: { input.phantomPower },
-                set: { newValue in
-                    input.phantomPower = newValue
-                    store.setPhantom(inputID: input.id, enabled: newValue)
-                }
-            )) {
-                Label("48V", systemImage: "bolt.fill")
-            }
-            .toggleStyle(.button)
-            .buttonStyle(.borderedProminent)
-            .tint(input.phantomPower ? .red : .gray)
-
-            VStack(spacing: 8) {
-                HorizontalValueSlider(
-                    title: "Output Mix",
-                    value: input.directMixToOutput,
-                    suffix: percent(input.directMixToOutput),
-                    onChange: {
-                        input.directMixToOutput = $0
-                        store.setDirectMix(inputID: input.id, value: $0)
+                MixerChannelControls(
+                    meterTitle: "Level",
+                    meterValue: input.level,
+                    faderTitle: "Gain",
+                    faderValue: input.gain,
+                    onFaderChange: {
+                        input.gain = $0
+                        store.setGain(inputID: input.id, value: $0)
                     }
                 )
+
+                Toggle(isOn: Binding(
+                    get: { input.phantomPower },
+                    set: { newValue in
+                        input.phantomPower = newValue
+                        store.setPhantom(inputID: input.id, enabled: newValue)
+                    }
+                )) {
+                    Label("48V", systemImage: "bolt.fill")
+                }
+                .toggleStyle(.button)
+                .buttonStyle(.borderedProminent)
+                .tint(input.phantomPower ? .red : .gray)
             }
+
+            Spacer(minLength: 0)
+
+            HorizontalValueSlider(
+                title: "Output Mix",
+                value: input.directMixToOutput,
+                suffix: percent(input.directMixToOutput),
+                onChange: {
+                    input.directMixToOutput = $0
+                    store.setDirectMix(inputID: input.id, value: $0)
+                }
+            )
+            .frame(height: bottomControlHeight)
         }
-        .padding(12)
-        .frame(width: 148, alignment: .topLeading)
+        .padding(10)
+        .frame(width: 132)
+        .frame(minHeight: channelStripHeight, maxHeight: channelStripHeight, alignment: .topLeading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
     }
 }
@@ -148,37 +154,91 @@ private struct OutputStrip: View {
     @Binding var output: OutputChannel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                Text(output.name)
-                    .font(.system(size: 14, weight: .semibold))
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 8)
-                Button {
-                    output.muted.toggle()
-                    store.setOutputMute(outputID: output.id, muted: output.muted)
-                } label: {
-                    Image(systemName: output.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(alignment: .top) {
+                    Text(output.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button {
+                        output.muted.toggle()
+                        store.setOutputMute(outputID: output.id, muted: output.muted)
+                    } label: {
+                        Image(systemName: output.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                    }
+                    .help(output.muted ? "Unmute" : "Mute")
                 }
-                .help(output.muted ? "Unmute" : "Mute")
+
+                MixerChannelControls(
+                    meterTitle: "Level",
+                    meterValue: output.level,
+                    meterAvailable: output.hasLevelMeter,
+                    faderTitle: "Volume",
+                    faderValue: output.volume,
+                    onFaderChange: {
+                        output.volume = $0
+                        store.setOutputVolume(outputID: output.id, value: $0)
+                    }
+                )
             }
 
-            MixerChannelControls(
-                meterTitle: "Level",
-                meterValue: output.level,
-                meterAvailable: output.hasLevelMeter,
-                faderTitle: "Volume",
-                faderValue: output.volume,
-                onFaderChange: {
-                    output.volume = $0
-                    store.setOutputVolume(outputID: output.id, value: $0)
-                }
+            Spacer(minLength: 0)
+
+            PhonesMonitorLever(
+                value: store.phonesMonitorBalance,
+                isAvailable: false,
+                onChange: { store.setPhonesMonitorBalance($0) }
             )
+            .frame(height: bottomControlHeight)
         }
-        .padding(12)
-        .frame(width: 148, alignment: .topLeading)
-        .frame(minHeight: 300, alignment: .topLeading)
+        .padding(10)
+        .frame(width: 132)
+        .frame(minHeight: channelStripHeight, maxHeight: channelStripHeight, alignment: .topLeading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct PhonesMonitorLever: View {
+    let value: Double
+    let isAvailable: Bool
+    let onChange: (Double) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Label("Phone", systemImage: "headphones")
+                    .labelStyle(.iconOnly)
+                    .help("Phone")
+                Spacer()
+                Label("Monitor", systemImage: "speaker.wave.2.fill")
+                    .labelStyle(.iconOnly)
+                    .help("Monitor")
+            }
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+
+            Slider(value: Binding(
+                get: { value },
+                set: { onChange($0) }
+            ), in: 0...1)
+            .controlSize(.small)
+            .disabled(!isAvailable)
+
+            HStack {
+                Text("Phone")
+                Spacer()
+                Text("Monitor")
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        .opacity(isAvailable ? 1 : 0.48)
+        .help(isAvailable ? "Phone / Monitor balance" : "EVO 4 exposes one shared output level; independent Phone / Monitor balance is not exposed.")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Phone Monitor Balance")
+        .accessibilityValue(isAvailable ? "\(Int((value * 100).rounded())) percent monitor" : "Unavailable on EVO 4")
     }
 }
 
@@ -191,7 +251,7 @@ private struct MixerChannelControls: View {
     let onFaderChange: (Double) -> Void
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 14) {
+        HStack(alignment: .bottom, spacing: 10) {
             VerticalLevelMeter(title: meterTitle, value: meterValue, isAvailable: meterAvailable)
             VerticalFader(title: faderTitle, value: faderValue, onChange: onFaderChange)
         }
@@ -206,14 +266,14 @@ private struct HorizontalValueSlider: View {
     let onChange: (Double) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(title)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text(suffix)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
 
@@ -221,6 +281,7 @@ private struct HorizontalValueSlider: View {
                 get: { value },
                 set: { newValue in onChange(newValue) }
             ), in: 0...1)
+            .controlSize(.small)
         }
     }
 }
@@ -231,7 +292,7 @@ private struct VerticalFader: View {
     let onChange: (Double) -> Void
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             Text(percent(value))
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.secondary)
@@ -275,10 +336,10 @@ private struct VerticalFader: View {
                         }
                 )
             }
-            .frame(width: 46, height: 160)
+            .frame(width: 46, height: 110)
 
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
@@ -293,7 +354,7 @@ private struct VerticalLevelMeter: View {
     var isAvailable = true
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             // Fixed single line: the dB string changes width as the level
             // moves ("-inf" ... "-100 dB"), and any wrap or reflow would
             // change this row's height and shift every control below it.
@@ -337,10 +398,10 @@ private struct VerticalLevelMeter: View {
                     .shadow(color: levelColor(value).opacity(0.3), radius: 5)
                 }
             }
-            .frame(width: 24, height: 160)
+            .frame(width: 24, height: 110)
 
             Text(title)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
         }
         .accessibilityLabel("Level")

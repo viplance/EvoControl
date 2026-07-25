@@ -8,12 +8,12 @@ struct EvoControlApp: App {
         WindowGroup {
             MixerView()
                 .environmentObject(store)
-                .frame(minWidth: 520, minHeight: 540)
                 .task {
                     DebugLog.reset()
                     store.prepareAudioAndRefreshDevices()
                 }
         }
+        .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}

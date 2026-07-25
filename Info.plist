@@ -16,5 +16,7 @@
     <string>14.0</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>Evo Control needs microphone access to read input level meters from your EVO device.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>Evo Control needs system audio capture access to show software output level meters for audio sent to your EVO device.</string>
 </dict>
 </plist>

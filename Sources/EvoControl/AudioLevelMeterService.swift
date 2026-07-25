@@ -225,6 +225,7 @@ final class AudioLevelMeterService: @unchecked Sendable {
             return min(1, peak)
         }
         let hasSignal = levels.contains { $0 > 0.005 }
+        let isFirstSignal = hasSignal && !sawNonZeroSignal
         if hasSignal {
             sawNonZeroSignal = true
         }
@@ -236,7 +237,7 @@ final class AudioLevelMeterService: @unchecked Sendable {
             peakPerChannel[index] = max(peakPerChannel[index], level)
         }
 
-        if renderCount <= 5 || hasSignal || renderCount % 250 == 0 {
+        if renderCount <= 5 || isFirstSignal || renderCount % 250 == 0 {
             log("render count=\(renderCount), frames=\(frames), levels=\(levels), hasSignal=\(hasSignal)")
         }
         if renderCount % 250 == 0 {

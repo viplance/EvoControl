@@ -23,5 +23,6 @@ mkdir -p "$MACOS_DIR"
 cp "$EXECUTABLE" "$MACOS_DIR/EvoControl"
 cp "$ROOT_DIR/Info.plist" "$CONTENTS_DIR/Info.plist"
 chmod +x "$MACOS_DIR/EvoControl"
+codesign --force --sign - "$APP_DIR" >/dev/null
 
 echo "$APP_DIR"

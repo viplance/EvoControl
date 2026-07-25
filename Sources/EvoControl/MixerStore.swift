@@ -18,8 +18,9 @@ final class MixerStore: ObservableObject {
     // sit permanently at -127.5 dB (not implemented). A separate "Monitor"
     // strip therefore duplicated the same hardware control.
     @Published var outputs: [OutputChannel] = [
-        OutputChannel(id: 1, name: "Output", volume: 0.72, muted: false, level: 0, hasLevelMeter: false)
+        OutputChannel(id: 1, name: "Output", volume: 0.72, muted: false, level: 0, hasLevelMeter: true)
     ]
+    @Published var phonesMonitorBalance: Double = 0.5
     @Published var statusMessage = "Searching for Audient EVO..."
 
     private let coreAudio = CoreAudioDeviceService()
@@ -27,8 +28,14 @@ final class MixerStore: ObservableObject {
     private lazy var levelMeter = AudioLevelMeterService { [weak self] levels in
         self?.applyInputLevels(levels)
     }
+    private lazy var outputTapMeter = OutputTapMeterService { [weak self] levels in
+        self?.applyOutputLevels(levels)
+    }
     private var hardwareSyncTask: Task<Void, Never>?
     private var applyCount = 0
+    private var outputApplyCount = 0
+    private var sawOutputSignal = false
+    private var sawInputSignal = false
     private var hardwarePollCount = 0
     private var phantomReadFailures: [Int: Int] = [:]
     private var phantomReadDisabledInputs = Set<Int>()
@@ -41,6 +48,7 @@ final class MixerStore: ObservableObject {
 
     init() {
         restorePersistedPhantomStates()
+        restorePersistedPhonesMonitorBalance()
         probeUsbControl()
     }
 
@@ -76,6 +84,7 @@ final class MixerStore: ObservableObject {
         selectedDevice = devices.first
         guard let selectedDevice else {
             levelMeter.stop()
+            outputTapMeter.stop()
             stopHardwarePolling()
             statusMessage = "No Audient EVO device found."
             log("No selected device found.")
@@ -98,6 +107,11 @@ final class MixerStore: ObservableObject {
         statusMessage = meterResult.applied
             ? "Connected: \(selectedDevice.displayName). \(meterResult.message ?? "Live levels enabled.")"
             : "Connected: \(selectedDevice.displayName). \(meterResult.message ?? "Live levels unavailable.")"
+        let outputMeterResult = outputTapMeter.start(deviceID: selectedDevice.id)
+        log("Output tap meter start result: applied=\(outputMeterResult.applied), message=\(String(describing: outputMeterResult.message))")
+        if let message = outputMeterResult.message {
+            statusMessage += " \(message)"
+        }
         log("Status message set: \(statusMessage)")
     }
 
@@ -209,6 +223,12 @@ final class MixerStore: ObservableObject {
         publish(coreAudio.setMute(deviceID: selectedDevice.id, output: true, channel: UInt32(outputID), muted: muted))
     }
 
+    func setPhonesMonitorBalance(_ value: Double) {
+        phonesMonitorBalance = max(0, min(1, value))
+        UserDefaults.standard.set(phonesMonitorBalance, forKey: phonesMonitorBalanceDefaultsKey)
+        statusMessage = "Phones / Monitor balance saved locally. EVO 4 exposes one shared output level."
+    }
+
     private func updateInput(_ id: Int, mutate: (inout InputChannel) -> Void) {
         guard let index = inputs.firstIndex(where: { $0.id == id }) else { return }
         mutate(&inputs[index])
@@ -238,7 +258,11 @@ final class MixerStore: ObservableObject {
     private func applyInputLevels(_ levels: [Double]) {
         applyCount += 1
         let hasSignal = levels.contains { $0 > 0.005 }
-        if applyCount <= 5 || hasSignal || applyCount % 100 == 1 {
+        let isFirstSignal = hasSignal && !sawInputSignal
+        if hasSignal {
+            sawInputSignal = true
+        }
+        if applyCount <= 5 || isFirstSignal || applyCount % 100 == 1 {
             log("applyInputLevels hasSignal=\(hasSignal) count=\(applyCount) levels=\(levels)")
         }
         for index in inputs.indices {
@@ -247,7 +271,24 @@ final class MixerStore: ObservableObject {
             let previous = inputs[index].level
             inputs[index].level = smoothLevel(previous: previous, next: rawLevel)
         }
-        clearUnavailableOutputLevels()
+    }
+
+    private func applyOutputLevels(_ levels: [Double]) {
+        outputApplyCount += 1
+        let hasSignal = levels.contains { $0 > 0.005 }
+        let isFirstSignal = hasSignal && !sawOutputSignal
+        if hasSignal {
+            sawOutputSignal = true
+        }
+        if outputApplyCount <= 5 || isFirstSignal || outputApplyCount % 100 == 1 {
+            log("applyOutputLevels hasSignal=\(hasSignal) levels=\(levels)")
+        }
+        let rawLevel = levels.max() ?? 0
+        for index in outputs.indices {
+            let previous = outputs[index].level
+            outputs[index].level = smoothLevel(previous: previous, next: rawLevel)
+            outputs[index].hasLevelMeter = true
+        }
     }
 
     private func requestHardwareControlSync() {
@@ -308,20 +349,19 @@ final class MixerStore: ObservableObject {
         "phantomPower.input\(inputID)"
     }
 
+    private func restorePersistedPhonesMonitorBalance() {
+        if UserDefaults.standard.object(forKey: phonesMonitorBalanceDefaultsKey) != nil {
+            phonesMonitorBalance = UserDefaults.standard.double(forKey: phonesMonitorBalanceDefaultsKey)
+        }
+    }
+
+    private var phonesMonitorBalanceDefaultsKey: String {
+        "phonesMonitorBalance"
+    }
+
     private func stopHardwarePolling() {
         hardwareSyncTask?.cancel()
         hardwareSyncTask = nil
-    }
-
-    private func clearUnavailableOutputLevels() {
-        for index in outputs.indices {
-            if !outputs[index].hasLevelMeter {
-                outputs[index].level = 0
-            }
-        }
-        if applyCount <= 5 || applyCount % 100 == 0 {
-            log("outputLevels unavailable: physical EVO output/monitor meter is not exposed by current CoreAudio/USB read path")
-        }
     }
 
     private func levelSourceIndex(forInputIndex inputIndex: Int, levelCount: Int) -> Int {

@@ -12,8 +12,10 @@ final class CoreAudioDeviceService: Sendable {
                 )
             }
             .filter { device in
-                let haystack = "\(device.name) \(device.manufacturer)".lowercased()
-                return haystack.contains("evo") || haystack.contains("audient")
+                let name = device.name.lowercased()
+                let manufacturer = device.manufacturer.lowercased()
+                guard !name.contains("evo control output meter") else { return false }
+                return manufacturer.contains("audient") || name == "evo4"
             }
             .sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
     }

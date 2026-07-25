@@ -13,7 +13,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "EvoControl",
-            dependencies: ["CEvoUsb"],
+            dependencies: ["CEvoAudioTap", "CEvoUsb"],
             linkerSettings: [
                 .linkedFramework("AppKit"),
                 .linkedFramework("AudioToolbox"),
@@ -34,6 +34,14 @@ let package = Package(
             name: "CEvoUsb",
             cSettings: [
                 .unsafeFlags(["-I/opt/homebrew/include/libusb-1.0"])
+            ]
+        ),
+        .target(
+            name: "CEvoAudioTap",
+            linkerSettings: [
+                .linkedFramework("AudioToolbox"),
+                .linkedFramework("CoreAudio"),
+                .linkedFramework("Foundation")
             ]
         ),
         .testTarget(
