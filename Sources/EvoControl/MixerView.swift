@@ -95,13 +95,15 @@ private struct InputStrip: View {
                     Text(input.name)
                         .font(.system(size: 13, weight: .semibold))
                     Spacer()
-                    Button {
+                    MuteIconButton(
+                        isMuted: input.muted,
+                        mutedIcon: "mic.slash.fill",
+                        unmutedIcon: "mic.fill",
+                        action: {
                         input.muted.toggle()
                         store.setInputMute(inputID: input.id, muted: input.muted)
-                    } label: {
-                        Image(systemName: input.muted ? "mic.slash.fill" : "mic.fill")
-                    }
-                    .help(input.muted ? "Unmute" : "Mute")
+                        }
+                    )
                 }
 
                 MixerChannelControls(
@@ -156,18 +158,21 @@ private struct OutputStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top) {
+                HStack(alignment: .center) {
                     Text(output.name)
                         .font(.system(size: 13, weight: .semibold))
-                        .fixedSize(horizontal: false, vertical: true)
+                        .lineLimit(1)
+                        .frame(height: 24, alignment: .center)
                     Spacer(minLength: 8)
-                    Button {
+                    MuteIconButton(
+                        isMuted: output.muted,
+                        mutedIcon: "speaker.slash.fill",
+                        unmutedIcon: "speaker.wave.2.fill",
+                        action: {
                         output.muted.toggle()
                         store.setOutputMute(outputID: output.id, muted: output.muted)
-                    } label: {
-                        Image(systemName: output.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    }
-                    .help(output.muted ? "Unmute" : "Mute")
+                        }
+                    )
                 }
 
                 MixerChannelControls(
@@ -196,6 +201,26 @@ private struct OutputStrip: View {
         .frame(width: 132)
         .frame(minHeight: channelStripHeight, maxHeight: channelStripHeight, alignment: .topLeading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct MuteIconButton: View {
+    let isMuted: Bool
+    let mutedIcon: String
+    let unmutedIcon: String
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: isMuted ? mutedIcon : unmutedIcon)
+                .font(.system(size: 13, weight: .semibold))
+                .symbolVariant(.none)
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.borderless)
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle())
+        .help(isMuted ? "Unmute" : "Mute")
     }
 }
 

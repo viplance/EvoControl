@@ -7,6 +7,8 @@ final class SoftwareMonitorService: @unchecked Sendable {
     private var isRunning = false
     fileprivate var input1Volume: Float = 0
     fileprivate var input2Volume: Float = 0
+    fileprivate var input1Muted = false
+    fileprivate var input2Muted = false
     fileprivate var inputChannelCount: UInt32 = 4
     fileprivate var renderCount = 0
     fileprivate var renderErrorCount = 0
@@ -150,6 +152,15 @@ final class SoftwareMonitorService: @unchecked Sendable {
         log("setVolume input=\(inputID) volume=\(clamped)")
     }
 
+    func setMuted(inputID: Int, muted: Bool) {
+        if inputID == 1 {
+            input1Muted = muted
+        } else if inputID == 2 {
+            input2Muted = muted
+        }
+        log("setMuted input=\(inputID) muted=\(muted)")
+    }
+
     private func nominalSampleRate(_ deviceID: AudioObjectID) -> Double {
         var addr = AudioObjectPropertyAddress(
             mSelector: kAudioDevicePropertyNominalSampleRate,
@@ -265,8 +276,8 @@ private let monitorCallback: AURenderCallback = { refCon, ioActionFlags, inTimeS
     let input1 = inputBuffers[source1].mData?.assumingMemoryBound(to: Float32.self)
     let input2 = inputBuffers[source2].mData?.assumingMemoryBound(to: Float32.self)
     let monitorGain: Float = 0.75
-    let volume1 = svc.input1Volume * monitorGain
-    let volume2 = svc.input2Volume * monitorGain
+    let volume1 = svc.input1Muted ? 0 : svc.input1Volume * monitorGain
+    let volume2 = svc.input2Muted ? 0 : svc.input2Volume * monitorGain
 
     let outBufs = UnsafeMutableAudioBufferListPointer(ioData)
     for bufferIndex in 0..<outBufs.count {

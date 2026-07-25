@@ -100,23 +100,26 @@ final class MixerStore: ObservableObject {
         if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
             meterResult = levelMeter.start(deviceID: selectedDevice.id)
             log("Level meter start result: applied=\(meterResult.applied), message=\(String(describing: meterResult.message))")
+            let outputMeterResult = outputTapMeter.start(deviceID: selectedDevice.id)
+            log("Output tap meter start result: applied=\(outputMeterResult.applied), message=\(String(describing: outputMeterResult.message))")
+            let monitorResult = softwareMonitor.start(deviceID: selectedDevice.id)
+            log("Software monitor start result: applied=\(monitorResult.applied), message=\(String(describing: monitorResult.message))")
+            if monitorResult.applied {
+                pushDirectMixToSoftwareMonitor()
+            }
+            statusMessage = meterResult.applied
+                ? "Connected: \(selectedDevice.displayName). \(meterResult.message ?? "Live levels enabled.")"
+                : "Connected: \(selectedDevice.displayName). \(meterResult.message ?? "Live levels unavailable.")"
+            if let message = outputMeterResult.message {
+                statusMessage += " \(message)"
+            }
         } else {
             levelMeter.stop()
+            outputTapMeter.stop()
+            softwareMonitor.stop()
             meterResult = ControlResult(applied: false, message: "Live levels waiting for microphone permission.")
             log("Level meter skipped until microphone permission is granted.")
-        }
-        statusMessage = meterResult.applied
-            ? "Connected: \(selectedDevice.displayName). \(meterResult.message ?? "Live levels enabled.")"
-            : "Connected: \(selectedDevice.displayName). \(meterResult.message ?? "Live levels unavailable.")"
-        let outputMeterResult = outputTapMeter.start(deviceID: selectedDevice.id)
-        log("Output tap meter start result: applied=\(outputMeterResult.applied), message=\(String(describing: outputMeterResult.message))")
-        if let message = outputMeterResult.message {
-            statusMessage += " \(message)"
-        }
-        let monitorResult = softwareMonitor.start(deviceID: selectedDevice.id)
-        log("Software monitor start result: applied=\(monitorResult.applied), message=\(String(describing: monitorResult.message))")
-        if monitorResult.applied {
-            pushDirectMixToSoftwareMonitor()
+            statusMessage = "Connected: \(selectedDevice.displayName). \(meterResult.message ?? "Live levels unavailable.")"
         }
         log("Status message set: \(statusMessage)")
     }
@@ -150,8 +153,15 @@ final class MixerStore: ObservableObject {
 
     func setInputMute(inputID: Int, muted: Bool) {
         updateInput(inputID) { $0.muted = muted }
+        softwareMonitor.setMuted(inputID: inputID, muted: muted)
         guard let selectedDevice else { return }
-        publish(coreAudio.setMute(deviceID: selectedDevice.id, output: false, channel: UInt32(inputID), muted: muted))
+        let result = coreAudio.setMute(deviceID: selectedDevice.id, output: false, channel: UInt32(inputID), muted: muted)
+        if result.applied {
+            publish(result)
+        } else {
+            statusMessage = muted ? "Input \(inputID) muted in Output Mix." : "Input \(inputID) unmuted in Output Mix."
+            log("Input mute handled by software monitor. CoreAudio result: applied=\(result.applied) message=\(String(describing: result.message))")
+        }
     }
 
     func setPhantom(inputID: Int, enabled: Bool) {
@@ -179,6 +189,7 @@ final class MixerStore: ObservableObject {
     private func pushDirectMixToSoftwareMonitor() {
         for input in inputs {
             softwareMonitor.setVolume(inputID: input.id, volume: Float(input.directMixToOutput))
+            softwareMonitor.setMuted(inputID: input.id, muted: input.muted)
         }
         log("pushed direct monitor mix to software monitor")
     }
@@ -194,12 +205,19 @@ final class MixerStore: ObservableObject {
 
     func setOutputVolume(outputID: Int, value: Double) {
         updateOutput(outputID) { $0.volume = value }
+        applyEffectiveOutputVolume(outputID: outputID)
+    }
+
+    private func applyEffectiveOutputVolume(outputID: Int) {
+        let output = outputs.first(where: { $0.id == outputID })
+        let faderVolume = output?.volume ?? 0
+        let effectiveVolume = output?.muted == true ? 0 : faderVolume
         let coreAudio = self.coreAudio
         let device = selectedDevice
         Task.detached {
-            let usbResult = EvoUsbProtocol.setOutputVolume(output: outputID, percent: value)
+            let usbResult = EvoUsbProtocol.setOutputVolume(output: outputID, percent: effectiveVolume)
             let fallback = (!usbResult.applied && device != nil)
-                ? coreAudio.setOutputVolume(deviceID: device!.id, channel: UInt32(outputID), value: Float32(value))
+                ? coreAudio.setOutputVolume(deviceID: device!.id, channel: UInt32(outputID), value: Float32(effectiveVolume))
                 : nil
             await self.applyControlOutcome(usbResult: usbResult, fallback: fallback)
         }
@@ -207,8 +225,16 @@ final class MixerStore: ObservableObject {
 
     func setOutputMute(outputID: Int, muted: Bool) {
         updateOutput(outputID) { $0.muted = muted }
+        applyEffectiveOutputVolume(outputID: outputID)
+        statusMessage = muted ? "Output muted." : "Output unmuted."
+
         guard let selectedDevice else { return }
-        publish(coreAudio.setMute(deviceID: selectedDevice.id, output: true, channel: UInt32(outputID), muted: muted))
+        let result = coreAudio.setMute(deviceID: selectedDevice.id, output: true, channel: UInt32(outputID), muted: muted)
+        if result.applied {
+            publish(result)
+        } else {
+            log("Output mute handled by volume write. CoreAudio result: applied=\(result.applied) message=\(String(describing: result.message))")
+        }
     }
 
     func setPhonesMonitorBalance(_ value: Double) {
