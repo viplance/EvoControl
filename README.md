@@ -80,18 +80,36 @@ A CoreAudio control probe also exposes output volume controls only for elements
 so a separate Phone/Monitor balance cannot currently be implemented through
 CoreAudio either.
 
-### Monitor mix matrix
+### Monitor mix matrix (0x3C00) — not usable on macOS
 
 Addressed as `wValue = 0x0100 + input * 4 + output`, so mic 1 occupies
 `0x0100..0x0103` and mic 2 `0x0104..0x0107`. On the EVO 8 the source list runs
 mic 1-4, DAW 1-4, loopback 1-2.
 
-**Unresolved:** prior-art projects identify this block as the mix matrix, but
-direct monitoring is still silent in this app. Remaining hypotheses are a wrong
-output index for this model, or a missing Monitor-Mix blend register (the
-manual describes Monitor Mix as a *blend* between input and DAW playback, not a
-per-input send). Distinguishing them requires listening or a fresh USB capture;
-USB write status alone cannot.
+Diagnostic testing (July 2025) proved that **Unit 0x3C is not in the DAW
+playback signal path on macOS**:
+
+1. **Driver override test:** wrote -12 dB to MIC1→OUT1, read back at t=0,
+   100ms, 500ms, 2000ms — the value persists. The macOS class driver does NOT
+   overwrite mixer coefficients.
+2. **Full matrix scan:** all 64 slots (0x0100..0x013F) are readable and return
+   0 dB. Every write lands and reads back correctly.
+3. **Mute-all test:** muted all 64 slots to -128 dB while playing music —
+   **audio continued uninterrupted**. The mixer unit is not in the DAW→speaker
+   path.
+4. **Control test:** muting the output block (0x3B00) cuts audio immediately,
+   confirming the test methodology works.
+
+On Linux, `evoctl` claims interface 0 (detaching ALSA), which likely gives the
+mixer unit control over routing. On macOS, the AppleUSBAudio class driver owns
+the interface and routes DAW playback to the speaker output directly, bypassing
+the mixer unit. Hardware direct monitoring via 0x3C00 is therefore not
+achievable without detaching the class driver, which removes the device from
+CoreAudio.
+
+**Software monitoring** (routing input back to output via AVAudioEngine) is
+used instead. This adds ~5–10 ms of latency at a 128-sample buffer but works
+within the constraints of the macOS audio stack.
 
 ### Input channels and metering
 

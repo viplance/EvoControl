@@ -8,8 +8,8 @@ final class MixerStore: ObservableObject {
     @Published var devices: [EvoDevice] = []
     @Published var selectedDevice: EvoDevice?
     @Published var inputs: [InputChannel] = [
-        InputChannel(id: 1, name: "Input 1", gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 1.0, level: 0),
-        InputChannel(id: 2, name: "Input 2", gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 1.0, level: 0)
+        InputChannel(id: 1, name: "Input 1", gain: 0.48, phantomPower: false, muted: false, directMixToOutput: 0.0, level: 0),
+        InputChannel(id: 2, name: "Input 2", gain: 0.42, phantomPower: false, muted: false, directMixToOutput: 0.0, level: 0)
     ]
     // The EVO 4 has a single output level shared by the speaker outputs and the
     // headphone jack -- the manual states the Volume control applies to both,
@@ -31,6 +31,7 @@ final class MixerStore: ObservableObject {
     private lazy var outputTapMeter = OutputTapMeterService { [weak self] levels in
         self?.applyOutputLevels(levels)
     }
+    private let softwareMonitor = SoftwareMonitorService()
     private var hardwareSyncTask: Task<Void, Never>?
     private var applyCount = 0
     private var outputApplyCount = 0
@@ -85,6 +86,7 @@ final class MixerStore: ObservableObject {
         guard let selectedDevice else {
             levelMeter.stop()
             outputTapMeter.stop()
+            softwareMonitor.stop()
             stopHardwarePolling()
             statusMessage = "No Audient EVO device found."
             log("No selected device found.")
@@ -93,7 +95,6 @@ final class MixerStore: ObservableObject {
 
         log("Selected device: \(selectedDevice.displayName) (ID: \(selectedDevice.id)). Microphone auth: \(microphoneAuthorizationDescription)")
         requestHardwareControlSync()
-        pushDirectMixToHardware()
         startHardwarePolling()
         let meterResult: ControlResult
         if AVCaptureDevice.authorizationStatus(for: .audio) == .authorized {
@@ -111,6 +112,11 @@ final class MixerStore: ObservableObject {
         log("Output tap meter start result: applied=\(outputMeterResult.applied), message=\(String(describing: outputMeterResult.message))")
         if let message = outputMeterResult.message {
             statusMessage += " \(message)"
+        }
+        let monitorResult = softwareMonitor.start(deviceID: selectedDevice.id)
+        log("Software monitor start result: applied=\(monitorResult.applied), message=\(String(describing: monitorResult.message))")
+        if monitorResult.applied {
+            pushDirectMixToSoftwareMonitor()
         }
         log("Status message set: \(statusMessage)")
     }
@@ -167,32 +173,14 @@ final class MixerStore: ObservableObject {
 
     func setDirectMix(inputID: Int, value: Double) {
         updateInput(inputID) { $0.directMixToOutput = value }
-        let hardware = self.hardware
-        let device = selectedDevice
-        Task.detached {
-            let left = hardware.setDirectMonitorMix(device: device, input: inputID, output: 1, value: value)
-            let right = hardware.setDirectMonitorMix(device: device, input: inputID, output: 2, value: value)
-            await self.applyControlOutcome(usbResult: left.applied ? right : left, fallback: nil)
-        }
+        softwareMonitor.setVolume(inputID: inputID, volume: Float(value))
     }
 
-    /// Pushes the current monitor-mix sliders to the device.
-    ///
-    /// The device cannot report its mix back, so on connect the UI's values are
-    /// the source of truth. Without this the sliders show a level the hardware
-    /// was never told about, and direct monitoring stays silent until the user
-    /// happens to drag one.
-    private func pushDirectMixToHardware() {
-        let hardware = self.hardware
-        let device = selectedDevice
-        let mixes = inputs.map { ($0.id, $0.directMixToOutput) }
-        Task.detached {
-            for (inputID, value) in mixes {
-                _ = hardware.setDirectMonitorMix(device: device, input: inputID, output: 1, value: value)
-                _ = hardware.setDirectMonitorMix(device: device, input: inputID, output: 2, value: value)
-            }
-            DebugLog.write("MixerStore", "pushed initial direct monitor mix: \(mixes)")
+    private func pushDirectMixToSoftwareMonitor() {
+        for input in inputs {
+            softwareMonitor.setVolume(inputID: input.id, volume: Float(input.directMixToOutput))
         }
+        log("pushed direct monitor mix to software monitor")
     }
 
     /// Publishes the outcome of an off-main-actor hardware write.
