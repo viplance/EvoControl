@@ -48,12 +48,12 @@ enum EvoUsbProtocol {
         )
     }
 
-    /// Sets the shared output level (speakers + headphones).
-    ///
-    /// wIndex 0x3B00 holds one stereo pair: 0x0000 is left, 0x0001 is right,
-    /// and both must be written together. Reading the block back shows Q8.8 dB
-    /// values here as well, not the 4-byte step table this used to send.
-    /// 0x0002..0x0008 read as -127.5 dB permanently and are not implemented.
+    static func getOutputVolume() -> Double? {
+        let result = read(wValue: 0x0000, wIndex: 0x3B00, length: 2)
+        guard let data = result.data, data.count >= 2 else { return nil }
+        return percentFromVolumeDb(data, minDb: -60.0)
+    }
+
     static func setOutputVolume(output: Int, percent: Double) -> ControlResult {
         let payload = volumeDbBytes(percent: percent, minDb: -60.0)
         let left = send(wValue: 0x0000, wIndex: 0x3B00, data: payload)
@@ -175,5 +175,12 @@ enum EvoUsbProtocol {
         return steps.firstIndex { Array($0.prefix(4)) == Array(bytes.prefix(4)) }
     }
 
-
+    static func percentFromVolumeDb(_ data: [UInt8], minDb: Double) -> Double {
+        guard data.count >= 2 else { return 0 }
+        let raw = Int16(bitPattern: UInt16(data[0]) | UInt16(data[1]) << 8)
+        let db = Double(raw) / 256.0
+        if db <= -127.0 { return 0 }
+        if db >= 0 { return 1 }
+        return (db - minDb) / (0 - minDb)
+    }
 }

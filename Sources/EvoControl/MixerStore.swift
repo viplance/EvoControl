@@ -41,6 +41,10 @@ final class MixerStore: ObservableObject {
     private var phantomReadFailures: [Int: Int] = [:]
     private var phantomReadDisabledInputs = Set<Int>()
     private var hardwareSyncInFlight = false
+    private var suppressOutputVolumeListener = false
+    private var suppressOutputMuteListener = false
+    private var lastPollFoundChange = false
+    private var idlePollCount = 0
 
     /// False when macOS refuses to release the USB-audio class driver, which
     /// makes every vendor control transfer (48V, gain, monitor mix) fail.
@@ -87,6 +91,7 @@ final class MixerStore: ObservableObject {
             levelMeter.stop()
             outputTapMeter.stop()
             softwareMonitor.stop()
+            removeCoreAudioListeners()
             stopHardwarePolling()
             statusMessage = "No Audient EVO device found."
             log("No selected device found.")
@@ -94,6 +99,7 @@ final class MixerStore: ObservableObject {
         }
 
         log("Selected device: \(selectedDevice.displayName) (ID: \(selectedDevice.id)). Microphone auth: \(microphoneAuthorizationDescription)")
+        installCoreAudioListeners(deviceID: selectedDevice.id)
         requestHardwareControlSync()
         startHardwarePolling()
         let meterResult: ControlResult
@@ -205,35 +211,31 @@ final class MixerStore: ObservableObject {
 
     func setOutputVolume(outputID: Int, value: Double) {
         updateOutput(outputID) { $0.volume = value }
-        applyEffectiveOutputVolume(outputID: outputID)
-    }
-
-    private func applyEffectiveOutputVolume(outputID: Int) {
-        let output = outputs.first(where: { $0.id == outputID })
-        let faderVolume = output?.volume ?? 0
-        let effectiveVolume = output?.muted == true ? 0 : faderVolume
+        suppressOutputVolumeListener = true
         let coreAudio = self.coreAudio
         let device = selectedDevice
         Task.detached {
-            let usbResult = EvoUsbProtocol.setOutputVolume(output: outputID, percent: effectiveVolume)
+            let usbResult = EvoUsbProtocol.setOutputVolume(output: outputID, percent: value)
             let fallback = (!usbResult.applied && device != nil)
-                ? coreAudio.setOutputVolume(deviceID: device!.id, channel: UInt32(outputID), value: Float32(effectiveVolume))
+                ? coreAudio.setOutputVolume(deviceID: device!.id, channel: UInt32(outputID), value: Float32(value))
                 : nil
             await self.applyControlOutcome(usbResult: usbResult, fallback: fallback)
+            try? await Task.sleep(for: .milliseconds(100))
+            await MainActor.run { self.suppressOutputVolumeListener = false }
         }
     }
 
     func setOutputMute(outputID: Int, muted: Bool) {
         updateOutput(outputID) { $0.muted = muted }
-        applyEffectiveOutputVolume(outputID: outputID)
-        statusMessage = muted ? "Output muted." : "Output unmuted."
-
-        guard let selectedDevice else { return }
-        let result = coreAudio.setMute(deviceID: selectedDevice.id, output: true, channel: UInt32(outputID), muted: muted)
-        if result.applied {
-            publish(result)
-        } else {
-            log("Output mute handled by volume write. CoreAudio result: applied=\(result.applied) message=\(String(describing: result.message))")
+        suppressOutputMuteListener = true
+        guard let selectedDevice else {
+            suppressOutputMuteListener = false
+            return
+        }
+        publish(coreAudio.setMute(deviceID: selectedDevice.id, output: true, channel: UInt32(outputID), muted: muted))
+        Task {
+            try? await Task.sleep(for: .milliseconds(100))
+            suppressOutputMuteListener = false
         }
     }
 
@@ -305,41 +307,86 @@ final class MixerStore: ObservableObject {
         }
     }
 
+    private struct HardwareSnapshot: Sendable {
+        var gains: [(Int, Double)] = []
+        var phantoms: [(Int, Bool)] = []
+        var outputVolume: Double?
+    }
+
     private func requestHardwareControlSync() {
         guard !hardwareSyncInFlight else { return }
         hardwareSyncInFlight = true
         let inputIDs = inputs.map(\.id)
+        let disabledPhantomInputs = phantomReadDisabledInputs
         hardwarePollCount += 1
-        let syncTask = Task.detached {
-            let gains = inputIDs.compactMap { inputID -> (Int, Double)? in
-                guard let gain = EvoUsbProtocol.getInputGain(input: inputID) else { return nil }
-                return (inputID, gain)
+        let pollCount = hardwarePollCount
+        Task.detached { [weak self] in
+            var snapshot = HardwareSnapshot()
+            for inputID in inputIDs {
+                if let gain = EvoUsbProtocol.getInputGain(input: inputID) {
+                    snapshot.gains.append((inputID, gain))
+                }
+                if !disabledPhantomInputs.contains(inputID) {
+                    let state = EvoUsbProtocol.getPhantomState(input: inputID)
+                    if let value = state.value {
+                        snapshot.phantoms.append((inputID, value))
+                    }
+                }
             }
-            return gains
-        }
-        Task { [weak self] in
-            let gains = await syncTask.value
-            guard let self else { return }
-            self.hardwareSyncInFlight = false
-            self.applyGainStates(gains)
+            snapshot.outputVolume = EvoUsbProtocol.getOutputVolume()
+            await self?.applyHardwareSnapshot(snapshot, pollCount: pollCount)
         }
     }
 
-    private func applyGainStates(_ gains: [(Int, Double)]) {
-        for (inputID, gain) in gains {
-            updateInput(inputID) { input in
-                if abs(input.gain - gain) > 0.004 {
-                    input.gain = gain
-                }
+    private func applyHardwareSnapshot(_ snapshot: HardwareSnapshot, pollCount: Int) {
+        hardwareSyncInFlight = false
+        var changed = false
+        for (inputID, gain) in snapshot.gains {
+            if let index = inputs.firstIndex(where: { $0.id == inputID }),
+               abs(inputs[index].gain - gain) > 0.004 {
+                inputs[index].gain = gain
+                changed = true
             }
+        }
+        for (inputID, phantom) in snapshot.phantoms {
+            if let index = inputs.firstIndex(where: { $0.id == inputID }),
+               inputs[index].phantomPower != phantom {
+                inputs[index].phantomPower = phantom
+                persistPhantomState(inputID: inputID, enabled: phantom)
+                changed = true
+            }
+        }
+        if let vol = snapshot.outputVolume,
+           let index = outputs.firstIndex(where: { $0.id == 1 }),
+           abs(outputs[index].volume - vol) > 0.004 {
+            outputs[index].volume = vol
+            changed = true
+        }
+        lastPollFoundChange = changed
+        if changed {
+            idlePollCount = 0
+        } else {
+            idlePollCount += 1
+        }
+        if changed || pollCount <= 3 {
+            log("hardwareSync poll=\(pollCount) changed=\(changed) gains=\(snapshot.gains) phantoms=\(snapshot.phantoms) vol=\(String(describing: snapshot.outputVolume))")
         }
     }
 
     private func startHardwarePolling() {
         stopHardwarePolling()
+        idlePollCount = 0
         hardwareSyncTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(500))
+                let interval: Int
+                if let self, self.lastPollFoundChange {
+                    interval = 150
+                } else if let self, self.idlePollCount < 10 {
+                    interval = 300
+                } else {
+                    interval = 800
+                }
+                try? await Task.sleep(for: .milliseconds(interval))
                 guard !Task.isCancelled else { return }
                 self?.requestHardwareControlSync()
             }
@@ -371,6 +418,62 @@ final class MixerStore: ObservableObject {
 
     private var phonesMonitorBalanceDefaultsKey: String {
         "phonesMonitorBalance"
+    }
+
+    private var listenedDeviceID: AudioObjectID?
+
+    private func installCoreAudioListeners(deviceID: AudioObjectID) {
+        removeCoreAudioListeners()
+        listenedDeviceID = deviceID
+        let scope = kAudioDevicePropertyScopeOutput
+
+        for ch: UInt32 in [0, 1, 2] {
+            coreAudio.addVolumeListener(deviceID: deviceID, scope: scope, channel: ch) { [weak self] devID, _ in
+                Task { @MainActor [weak self] in
+                    self?.handleOutputVolumeChange(deviceID: devID)
+                }
+            }
+            coreAudio.addMuteListener(deviceID: deviceID, scope: scope, channel: ch) { [weak self] devID, _ in
+                Task { @MainActor [weak self] in
+                    self?.handleOutputMuteChange(deviceID: devID)
+                }
+            }
+        }
+        log("Installed CoreAudio listeners for device \(deviceID)")
+        handleOutputVolumeChange(deviceID: deviceID)
+        handleOutputMuteChange(deviceID: deviceID)
+    }
+
+    private func removeCoreAudioListeners() {
+        guard let devID = listenedDeviceID else { return }
+        coreAudio.removeAllListeners(deviceID: devID)
+        listenedDeviceID = nil
+        log("Removed CoreAudio listeners for device \(devID)")
+    }
+
+    private func handleOutputVolumeChange(deviceID: AudioObjectID) {
+        guard !suppressOutputVolumeListener else { return }
+        let vol = coreAudio.getOutputVolume(deviceID: deviceID, channel: 1)
+            ?? coreAudio.getOutputVolume(deviceID: deviceID, channel: 0)
+        guard let vol else { return }
+        let value = Double(vol)
+        if let index = outputs.firstIndex(where: { $0.id == 1 }),
+           abs(outputs[index].volume - value) > 0.004 {
+            outputs[index].volume = value
+            log("CoreAudio volume listener: \(value)")
+        }
+    }
+
+    private func handleOutputMuteChange(deviceID: AudioObjectID) {
+        guard !suppressOutputMuteListener else { return }
+        let muted = coreAudio.getMute(deviceID: deviceID, output: true, channel: 1)
+            ?? coreAudio.getMute(deviceID: deviceID, output: true, channel: 0)
+        guard let muted else { return }
+        if let index = outputs.firstIndex(where: { $0.id == 1 }),
+           outputs[index].muted != muted {
+            outputs[index].muted = muted
+            log("CoreAudio mute listener: \(muted)")
+        }
     }
 
     private func stopHardwarePolling() {
