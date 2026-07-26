@@ -111,6 +111,7 @@ private struct InputStrip: View {
                     meterValue: input.level,
                     faderTitle: "Gain",
                     faderValue: input.gain,
+                    muted: input.muted,
                     onFaderChange: {
                         input.gain = $0
                         store.setGain(inputID: input.id, value: $0)
@@ -137,6 +138,7 @@ private struct InputStrip: View {
                 title: "Output Mix",
                 value: input.directMixToOutput,
                 suffix: percent(input.directMixToOutput),
+                muted: input.muted,
                 onChange: {
                     input.directMixToOutput = $0
                     store.setDirectMix(inputID: input.id, value: $0)
@@ -181,6 +183,7 @@ private struct OutputStrip: View {
                     meterAvailable: output.hasLevelMeter,
                     faderTitle: "Volume",
                     faderValue: output.volume,
+                    muted: output.muted,
                     onFaderChange: {
                         output.volume = $0
                         store.setOutputVolume(outputID: output.id, value: $0)
@@ -193,6 +196,7 @@ private struct OutputStrip: View {
             PhonesMonitorLever(
                 value: store.phonesMonitorBalance,
                 isAvailable: false,
+                muted: output.muted,
                 onChange: { store.setPhonesMonitorBalance($0) }
             )
             .frame(height: bottomControlHeight)
@@ -227,6 +231,7 @@ private struct MuteIconButton: View {
 private struct PhonesMonitorLever: View {
     let value: Double
     let isAvailable: Bool
+    var muted = false
     let onChange: (Double) -> Void
 
     var body: some View {
@@ -249,6 +254,7 @@ private struct PhonesMonitorLever: View {
             ), in: 0...1)
             .controlSize(.small)
             .disabled(!isAvailable)
+            .tint(muted ? .gray : nil)
 
             HStack {
                 Text("Phone")
@@ -273,12 +279,13 @@ private struct MixerChannelControls: View {
     var meterAvailable = true
     let faderTitle: String
     let faderValue: Double
+    var muted = false
     let onFaderChange: (Double) -> Void
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 10) {
             VerticalLevelMeter(title: meterTitle, value: meterValue, isAvailable: meterAvailable)
-            VerticalFader(title: faderTitle, value: faderValue, onChange: onFaderChange)
+            VerticalFader(title: faderTitle, value: faderValue, muted: muted, onChange: onFaderChange)
         }
         .frame(maxWidth: .infinity)
     }
@@ -288,6 +295,7 @@ private struct HorizontalValueSlider: View {
     let title: String
     let value: Double
     let suffix: String
+    var muted = false
     let onChange: (Double) -> Void
 
     var body: some View {
@@ -307,6 +315,7 @@ private struct HorizontalValueSlider: View {
                 set: { newValue in onChange(newValue) }
             ), in: 0...1)
             .controlSize(.small)
+            .tint(muted ? .gray : nil)
         }
     }
 }
@@ -314,7 +323,12 @@ private struct HorizontalValueSlider: View {
 private struct VerticalFader: View {
     let title: String
     let value: Double
+    var muted = false
     let onChange: (Double) -> Void
+
+    private var fillColor: Color {
+        muted ? Color.gray.opacity(0.5) : Color.accentColor.opacity(0.8)
+    }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -336,7 +350,7 @@ private struct VerticalFader: View {
                         .frame(width: 8)
                         .overlay(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Color.accentColor.opacity(0.8))
+                                .fill(fillColor)
                                 .frame(width: 8, height: trackHeight * clamped)
                         }
 
