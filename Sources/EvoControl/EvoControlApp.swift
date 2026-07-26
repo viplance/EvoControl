@@ -1,4 +1,16 @@
+import AppKit
 import SwiftUI
+
+private struct WindowAccessor: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            view.window?.level = .floating
+        }
+        return view
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+}
 
 @main
 struct EvoControlApp: App {
@@ -12,6 +24,7 @@ struct EvoControlApp: App {
                     DebugLog.reset()
                     store.prepareAudioAndRefreshDevices()
                 }
+                .background(WindowAccessor())
         }
         .windowResizability(.contentSize)
         .windowStyle(.hiddenTitleBar)

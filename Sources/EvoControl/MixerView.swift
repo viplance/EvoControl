@@ -1,7 +1,9 @@
 import SwiftUI
 
-private let channelStripHeight: CGFloat = 280
+private let channelStripHeight: CGFloat = 340
 private let bottomControlHeight: CGFloat = 58
+private let stripWidth: CGFloat = 100 + 18 + 10
+private let stripAreaWidth: CGFloat = stripWidth * 3 + 8 * 2 + 6 + 20
 
 struct MixerView: View {
     @EnvironmentObject private var store: MixerStore
@@ -10,23 +12,23 @@ struct MixerView: View {
         VStack(spacing: 0) {
             TopBar()
             Divider()
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top, spacing: 8) {
-                    ForEach($store.inputs) { $input in
-                        InputStrip(input: $input)
-                    }
+            HStack(alignment: .top, spacing: 8) {
+                ForEach($store.inputs) { $input in
+                    InputStrip(input: $input)
+                }
 
-                    Divider()
-                        .frame(height: channelStripHeight)
-                        .padding(.horizontal, 2)
+                Divider()
+                    .frame(height: channelStripHeight)
+                    .padding(.horizontal, 2)
 
-                    ForEach($store.outputs) { $output in
-                        OutputStrip(output: $output)
-                    }
+                ForEach($store.outputs) { $output in
+                    OutputStrip(output: $output)
                 }
             }
             .padding(10)
+            .fixedSize()
         }
+        .frame(width: stripAreaWidth)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 }
@@ -36,16 +38,10 @@ private struct TopBar: View {
 
     var body: some View {
         HStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Evo Control")
-                    .font(.system(size: 16, weight: .semibold))
-                Text(store.statusMessage)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+            Text("Evo Control")
+                .font(.system(size: 16, weight: .semibold))
 
-            Spacer()
+            Spacer(minLength: 4)
 
             Picker("Device", selection: deviceBinding) {
                 if store.devices.isEmpty {
@@ -91,9 +87,10 @@ private struct InputStrip: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
+                HStack(alignment: .center) {
                     Text(input.name)
                         .font(.system(size: 13, weight: .semibold))
+                        .frame(height: 24, alignment: .center)
                     Spacer()
                     MuteIconButton(
                         isMuted: input.muted,
@@ -105,6 +102,7 @@ private struct InputStrip: View {
                         }
                     )
                 }
+                .padding(.bottom, 7)
 
                 MixerChannelControls(
                     meterTitle: "Level",
@@ -145,9 +143,13 @@ private struct InputStrip: View {
                 }
             )
             .frame(height: bottomControlHeight)
+            .padding(.bottom, 8)
         }
-        .padding(10)
-        .frame(width: 132)
+        .frame(width: 100)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .padding(.leading, 18)
+        .padding(.trailing, 10)
         .frame(minHeight: channelStripHeight, maxHeight: channelStripHeight, alignment: .topLeading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -200,8 +202,11 @@ private struct OutputStrip: View {
             )
             .frame(height: bottomControlHeight)
         }
-        .padding(10)
-        .frame(width: 132)
+        .frame(width: 100)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .padding(.leading, 18)
+        .padding(.trailing, 10)
         .frame(minHeight: channelStripHeight, maxHeight: channelStripHeight, alignment: .topLeading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8))
     }
@@ -371,7 +376,7 @@ private struct VerticalFader: View {
                         }
                 )
             }
-            .frame(width: 46, height: 110)
+            .frame(width: 46, height: 138)
 
             Text(title)
                 .font(.system(size: 11, weight: .medium))
@@ -433,7 +438,7 @@ private struct VerticalLevelMeter: View {
                     .shadow(color: levelColor(value).opacity(0.3), radius: 5)
                 }
             }
-            .frame(width: 24, height: 110)
+            .frame(width: 24, height: 138)
 
             Text(title)
                 .font(.system(size: 11, weight: .medium))
