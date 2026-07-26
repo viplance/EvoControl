@@ -20,7 +20,7 @@ final class MixerStore: ObservableObject {
     @Published var outputs: [OutputChannel] = [
         OutputChannel(id: 1, name: "Output", volume: 0.72, muted: false, level: 0, hasLevelMeter: true)
     ]
-    @Published var phonesMonitorBalance: Double = 0.5
+    @Published var monitorBalance: Double = 1.0
     @Published var statusMessage = "Searching for Audient EVO..."
 
     private let coreAudio = CoreAudioDeviceService()
@@ -53,7 +53,7 @@ final class MixerStore: ObservableObject {
 
     init() {
         restorePersistedPhantomStates()
-        restorePersistedPhonesMonitorBalance()
+        restorePersistedMonitorBalance()
         probeUsbControl()
     }
 
@@ -239,10 +239,15 @@ final class MixerStore: ObservableObject {
         }
     }
 
-    func setPhonesMonitorBalance(_ value: Double) {
-        phonesMonitorBalance = max(0, min(1, value))
-        UserDefaults.standard.set(phonesMonitorBalance, forKey: phonesMonitorBalanceDefaultsKey)
-        statusMessage = "Phones / Monitor balance saved locally. EVO 4 exposes one shared output level."
+    func setMonitorBalance(_ value: Double) {
+        monitorBalance = max(0, min(1, value))
+        UserDefaults.standard.set(monitorBalance, forKey: monitorBalanceDefaultsKey)
+        Task.detached {
+            let result = EvoUsbProtocol.setMonitorBalance(percent: value)
+            await MainActor.run {
+                if let msg = result.message { self.log("setMonitorBalance: \(msg)") }
+            }
+        }
     }
 
     private func updateInput(_ id: Int, mutate: (inout InputChannel) -> Void) {
@@ -311,6 +316,7 @@ final class MixerStore: ObservableObject {
         var gains: [(Int, Double)] = []
         var phantoms: [(Int, Bool)] = []
         var outputVolume: Double?
+        var monitorBalance: Double?
     }
 
     private func requestHardwareControlSync() {
@@ -334,6 +340,7 @@ final class MixerStore: ObservableObject {
                 }
             }
             snapshot.outputVolume = EvoUsbProtocol.getOutputVolume()
+            snapshot.monitorBalance = EvoUsbProtocol.getMonitorBalance()
             await self?.applyHardwareSnapshot(snapshot, pollCount: pollCount)
         }
     }
@@ -362,6 +369,12 @@ final class MixerStore: ObservableObject {
             outputs[index].volume = vol
             changed = true
         }
+        if let bal = snapshot.monitorBalance,
+           abs(monitorBalance - bal) > 0.004 {
+            monitorBalance = bal
+            UserDefaults.standard.set(monitorBalance, forKey: monitorBalanceDefaultsKey)
+            changed = true
+        }
         lastPollFoundChange = changed
         if changed {
             idlePollCount = 0
@@ -369,7 +382,7 @@ final class MixerStore: ObservableObject {
             idlePollCount += 1
         }
         if changed || pollCount <= 3 {
-            log("hardwareSync poll=\(pollCount) changed=\(changed) gains=\(snapshot.gains) phantoms=\(snapshot.phantoms) vol=\(String(describing: snapshot.outputVolume))")
+            log("hardwareSync poll=\(pollCount) changed=\(changed) gains=\(snapshot.gains) phantoms=\(snapshot.phantoms) vol=\(String(describing: snapshot.outputVolume)) bal=\(String(describing: snapshot.monitorBalance))")
         }
     }
 
@@ -410,14 +423,14 @@ final class MixerStore: ObservableObject {
         "phantomPower.input\(inputID)"
     }
 
-    private func restorePersistedPhonesMonitorBalance() {
-        if UserDefaults.standard.object(forKey: phonesMonitorBalanceDefaultsKey) != nil {
-            phonesMonitorBalance = UserDefaults.standard.double(forKey: phonesMonitorBalanceDefaultsKey)
+    private func restorePersistedMonitorBalance() {
+        if UserDefaults.standard.object(forKey: monitorBalanceDefaultsKey) != nil {
+            monitorBalance = UserDefaults.standard.double(forKey: monitorBalanceDefaultsKey)
         }
     }
 
-    private var phonesMonitorBalanceDefaultsKey: String {
-        "phonesMonitorBalance"
+    private var monitorBalanceDefaultsKey: String {
+        "monitorBalance"
     }
 
     private var listenedDeviceID: AudioObjectID?

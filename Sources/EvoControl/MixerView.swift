@@ -193,11 +193,10 @@ private struct OutputStrip: View {
 
             Spacer(minLength: 0)
 
-            PhonesMonitorLever(
-                value: store.phonesMonitorBalance,
-                isAvailable: false,
+            MicOutputBalanceLever(
+                value: store.monitorBalance,
                 muted: output.muted,
-                onChange: { store.setPhonesMonitorBalance($0) }
+                onChange: { store.setMonitorBalance($0) }
             )
             .frame(height: bottomControlHeight)
         }
@@ -228,22 +227,21 @@ private struct MuteIconButton: View {
     }
 }
 
-private struct PhonesMonitorLever: View {
+private struct MicOutputBalanceLever: View {
     let value: Double
-    let isAvailable: Bool
     var muted = false
     let onChange: (Double) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Label("Phone", systemImage: "headphones")
+                Label("Mic", systemImage: "mic.fill")
                     .labelStyle(.iconOnly)
-                    .help("Phone")
+                    .help("Mic")
                 Spacer()
-                Label("Monitor", systemImage: "speaker.wave.2.fill")
+                Label("Output", systemImage: "speaker.wave.2.fill")
                     .labelStyle(.iconOnly)
-                    .help("Monitor")
+                    .help("Output")
             }
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(.secondary)
@@ -253,23 +251,21 @@ private struct PhonesMonitorLever: View {
                 set: { onChange($0) }
             ), in: 0...1)
             .controlSize(.small)
-            .disabled(!isAvailable)
             .tint(muted ? .gray : nil)
 
             HStack {
-                Text("Phone")
+                Text("Mic")
                 Spacer()
-                Text("Monitor")
+                Text("Output")
             }
             .font(.system(size: 10, weight: .medium))
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
-        .opacity(isAvailable ? 1 : 0.48)
-        .help(isAvailable ? "Phone / Monitor balance" : "EVO 4 exposes one shared output level; independent Phone / Monitor balance is not exposed.")
+        .help("Balance between direct microphone monitoring and DAW output")
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Phone Monitor Balance")
-        .accessibilityValue(isAvailable ? "\(Int((value * 100).rounded())) percent monitor" : "Unavailable on EVO 4")
+        .accessibilityLabel("Mic Output Balance")
+        .accessibilityValue("\(Int((value * 100).rounded()))% output")
     }
 }
 

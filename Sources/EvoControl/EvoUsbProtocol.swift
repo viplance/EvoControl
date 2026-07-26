@@ -48,6 +48,17 @@ enum EvoUsbProtocol {
         )
     }
 
+    static func getMonitorBalance() -> Double? {
+        let result = read(wValue: 0x0000, wIndex: 0x3800, length: 1)
+        guard let data = result.data, !data.isEmpty else { return nil }
+        return Double(data[0]) / 127.0
+    }
+
+    static func setMonitorBalance(percent: Double) -> ControlResult {
+        let value = UInt8(max(0, min(127, Int((clamped(percent) * 127).rounded()))))
+        return send(wValue: 0x0000, wIndex: 0x3800, data: [value])
+    }
+
     static func getOutputVolume() -> Double? {
         let result = read(wValue: 0x0000, wIndex: 0x3B00, length: 2)
         guard let data = result.data, data.count >= 2 else { return nil }
