@@ -12,6 +12,8 @@
     <string>APPL</string>
     <key>CFBundleExecutable</key>
     <string>EvoControl</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>NSMicrophoneUsageDescription</key>
